@@ -7,13 +7,23 @@ public interface Constants {
     // ability descriptions
     String START_DESCRIPTION = "Start using GeoPal to share location with your friends!";
     String SHARE_LOCATION_DESCRIPTION = "Share location with your friends!";
-    String SEND_FRIEND_INVITE_DESCRIPTION = "Send friend invitation to user!" +
-            " If he accepts it - you'll officially become friends";
     String ERROR_MESSAGE_ENDING = "If error persists, please contact administrator";
 
-    String ADD_FRIEND_BUTTON = "Add Friend\uD83D\uDC64";
+    interface FriendRequestConstants {
+        String SEND_FRIEND_INVITE_DESCRIPTION = "Send friend invitation to user!" +
+                " If he accepts it - you'll officially become friends";
+        String ADD_FRIEND = "Add Friend\uD83D\uDC64";
+        String SEND_WITHOUT_COMMENT = "Send without comments✅";
+        String ABORT_SENDING = "Abort friend request❌";
+        // needed when user provided comment for a friend request
+        String SEND = "Send✅";
+        String ACCEPT = "Accept✅";
+        String DECLINE = "Decline❌";
+
+        String CONFIRM_CALLBACK_QUERY = "confirm";
+        String ABORT_CALLBACK_QUERY = "abort";
+    }
+
     String SHARE_LOCATION_BUTTON = "Share Location\uD83D\uDCCD";
     String ABORT_BUTTON = "❌";
-    String ACCEPT_FRIEND_REQUEST_INLINE_BUTTON = "Accept✅";
-    String DECLINE_FRIEND_REQUEST_INLINE_BUTTON = "Decline❌";
 }

@@ -1,9 +1,7 @@
 package bot;
 
-import bot.storage.GeoUser;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboard;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardRemove;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -21,14 +19,13 @@ import java.util.List;
 public class KeyboardFactory {
     // abort button that is used for all reply keyboard markups
     private static final KeyboardButton abortButton = new KeyboardButton(Constants.ABORT_BUTTON);
-
     /**
      * @return ReplyKeyboard with "Add friend" button with request user flag and an abort button
      * */
     public static ReplyKeyboardMarkup addFriendKeyboard() {
         KeyboardButton addFriendButton = KeyboardButton
                 .builder()
-                .text(Constants.ADD_FRIEND_BUTTON)
+                .text(Constants.FriendRequestConstants.ADD_FRIEND)
                 .requestUser(KeyboardButtonRequestUser.builder()
                         .requestId("1")
                         .build())
@@ -123,14 +120,54 @@ public class KeyboardFactory {
                         List.of(
                                 InlineKeyboardButton
                                         .builder()
-                                        .text(Constants.ACCEPT_FRIEND_REQUEST_INLINE_BUTTON)
+                                        .text(Constants.FriendRequestConstants.ACCEPT)
                                         // callback data in form (response:to:from)
                                         .callbackData(acceptCallback)
                                         .build(),
                                 InlineKeyboardButton
                                         .builder()
-                                        .text(Constants.DECLINE_FRIEND_REQUEST_INLINE_BUTTON)
+                                        .text(Constants.FriendRequestConstants.DECLINE)
                                         .callbackData(declineCallback)
+                                        .build()
+                        )
+                )
+                .build();
+    }
+
+    public static InlineKeyboardMarkup friendRequestCommentInlineKeyboard(String sendCallback, String abortCallback) {
+        return InlineKeyboardMarkup.builder()
+                .keyboardRow(
+                        List.of(
+                                InlineKeyboardButton
+                                        .builder()
+                                        .text(Constants.FriendRequestConstants.SEND_WITHOUT_COMMENT)
+                                        // callback data in form (response:to:from)
+                                        .callbackData(sendCallback)
+                                        .build(),
+                                InlineKeyboardButton
+                                        .builder()
+                                        .text(Constants.FriendRequestConstants.ABORT_SENDING)
+                                        .callbackData(abortCallback)
+                                        .build()
+                        )
+                )
+                .build();
+    }
+
+    public static InlineKeyboardMarkup friendRequestConfirmInlineKeyboard(String confirmCallback, String abortCallback) {
+        return InlineKeyboardMarkup.builder()
+                .keyboardRow(
+                        List.of(
+                                InlineKeyboardButton
+                                        .builder()
+                                        .text(Constants.FriendRequestConstants.SEND)
+                                        // callback data in form (response:to:from)
+                                        .callbackData(confirmCallback)
+                                        .build(),
+                                InlineKeyboardButton
+                                        .builder()
+                                        .text(Constants.FriendRequestConstants.ABORT_SENDING)
+                                        .callbackData(abortCallback)
                                         .build()
                         )
                 )
