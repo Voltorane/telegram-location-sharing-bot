@@ -412,7 +412,6 @@ public class GeoPalBot extends AbilityBot {
         // used for both cases, when user has no comments and when he sends the friend request after the preview
         Reply confirmedSendingFriendRequest = Reply.of(
                 (bot, upd) -> {
-//                    Message messageReceived =
                     User user = upd.getCallbackQuery().getFrom();
                     GeoUser sender = userStorage.getOrRegister(user, user.getId());
                     OngoingFriendRequest wrapper = ongoingFriendRequests.get(sender.getUserId());
@@ -424,7 +423,7 @@ public class GeoPalBot extends AbilityBot {
                     ongoingFriendRequests.remove(sender.getUserId());
                     responseHandler.removeInlineKeyboard(sender.getChatId(), upd.getCallbackQuery().getMessage().getMessageId());
                 }, hasCallbackWith(Constants.FriendRequestConstants.CONFIRM_CALLBACK_QUERY));
-
+// TODO REMOVE COMMENTS
 //        Reply noComments = Reply.of(
 //                (bot, upd) -> {
 //                    long chatId = upd.getCallbackQuery().getMessage().getChatId();
@@ -459,6 +458,7 @@ public class GeoPalBot extends AbilityBot {
                 .next(confirmedSendingFriendRequest)
                 .next(abortFriendRequest)
                 .build();
+// TODO REMOVE COMMENTS
 //        Reply abortedSendingFriendRequest = Reply.of(
 //                (bot, upd) -> {
 //                    logger.info("{} aborted sending friend request!", upd.getCallbackQuery().getFrom().getId());
@@ -506,6 +506,41 @@ public class GeoPalBot extends AbilityBot {
                 .next(userSharedNotRegistered)
                 .build();
     }
+
+    private String getFriendForList(GeoUser friend) {
+        String firstName = friend.getUser().getFirstName();
+        String lastName = friend.getUser().getLastName() == null ? "" : friend.getUser().getLastName();
+        return String.format("%s %s - @%s", firstName, lastName,
+                friend.getUser().getUserName());
+    }
+
+    public String getFriendList(GeoUser user) {
+        StringBuilder sb = new StringBuilder();
+        int i = 1;
+        for (GeoUser friend : user.getFriends()) {
+            sb.append(i).append(") ").append(getFriendForList(friend));
+            i++;
+        }
+        return sb.toString();
+    }
+
+    @SuppressWarnings("unused")
+    public Ability friendList() {
+        return Ability
+                .builder()
+                .name("friend_list")
+                .info("share list of friends to user")
+                .input(0)
+                .privacy(PUBLIC)
+                .locality(USER)
+                .action(ctx -> {
+                    GeoUser user = userStorage.getOrRegister(ctx.user(), ctx.user().getId());
+                    responseHandler.sendFriendList(ctx.chatId(), getFriendList(user));
+                })
+                .build();
+    }
+
+    // TODO PENDING FRIEND REQUESTS
 
 //    @SuppressWarnings("unused")
 //    public Ability askForFriendToAdd() {
