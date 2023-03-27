@@ -379,4 +379,11 @@ public class ResponseHandler {
             }
         }
     }
+
+    public void sendFriendList(Long chatId, String friendList) {
+        String text = friendList.isEmpty()
+                ?"You don't have any friends yet :( You can add them via /add_friend command"
+                : "Here are your friends:\n" + friendList;
+        silent.send(text, chatId);
+    }
 }
