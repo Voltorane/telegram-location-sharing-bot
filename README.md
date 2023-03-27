@@ -16,11 +16,11 @@ To get started with GeoPal, simply start a chat with the bot by searching for [@
 - /help - Get help with using GeoPal.
 
 ## Overview
-![Demo](resources/markdown/demo.gif) \
+![Demo](resources/demo.gif) \
 
-![Scroll over the friend list](resources/markdown/friend_list.gif) \
+![Scroll over the friend list](resources/friend_list.gif) \
 
-![Abort every action](resources/markdown/abort.gif) \
+![Abort every action](resources/abort.gif) \
 
 ## How to run
 
