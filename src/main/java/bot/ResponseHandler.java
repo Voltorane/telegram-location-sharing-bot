@@ -17,7 +17,10 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import utils.Constants;
 import utils.Constants.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Class responsible for all communication from bot to user
@@ -385,5 +388,91 @@ public class ResponseHandler {
                 ?"You don't have any friends yet :( You can add them via /add_friend command"
                 : "Here are your friends:\n" + friendList;
         silent.send(text, chatId);
+    }
+
+    public void abortFriendRemoving(long chatId) {
+        silent.send("Friend removing aborted!", chatId);
+    }
+
+    public void sendFriendListToRemove(long chatId, List<Map.Entry<String, String>> buttons) {
+        if (buttons.isEmpty()) {
+            silent.send("You don't have any friends yet :( You can add them via /add_friend command", chatId);
+            return;
+        }
+        int maxAmount = 5;
+        // list that will be sent to user
+        List<Map.Entry<String, String>> resultList = buttons.subList(0, Math.min(buttons.size(), maxAmount));
+        String nextBtnCallback = resultList.size() < maxAmount ? null : "remove_friend:index:5";
+        // don't need "previousButton" in the first list
+        InlineKeyboardMarkup keyboardMarkup = KeyboardFactory.removeFriendInlineKeyboard(resultList, nextBtnCallback, null);
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("Please select friend you want to remove:")
+                .replyMarkup(keyboardMarkup)
+                .build();
+        try {
+            sender.execute(message);
+        } catch (TelegramApiException e) {
+            logger.error("Sending remove friend list failed: {}", e.getMessage());
+        }
+    }
+
+    public void sendFriendListToRemove(long chatId, int messageId, List<Map.Entry<String, String>> buttons, int startIndex) {
+        if (buttons.size() <= startIndex) {
+            logger.error("Button list is smaller than start index");
+            return;
+        }
+        int maxAmount = startIndex + 5;
+        // list that will be sent to user
+        List<Map.Entry<String, String>> resultList = buttons.subList(startIndex, Math.min(buttons.size(), maxAmount));
+        String nextBtnCallback = buttons.size() - 1 <= maxAmount
+                ? null
+                : "remove_friend:index:" + Math.min(buttons.size() - 1, maxAmount);
+        String prevBtnCallback = startIndex + resultList.size() <= 5
+                ? null
+                : "remove_friend:index:" + Math.max(0, startIndex - 5);
+        // don't need "previousButton" in the first list
+        InlineKeyboardMarkup keyboardMarkup =
+                KeyboardFactory.removeFriendInlineKeyboard(resultList, nextBtnCallback, prevBtnCallback);
+
+        EditMessageReplyMarkup editMessageReplyMarkup = EditMessageReplyMarkup
+                .builder()
+                .chatId(chatId)
+                .messageId(messageId)
+                .replyMarkup(keyboardMarkup)
+                .build();
+        try {
+            sender.execute(editMessageReplyMarkup);
+        } catch (TelegramApiException e) {
+            logger.error("Sending remove friend list failed: {}", e.getMessage());
+        }
+    }
+
+    public void askToConfirmFriendRemove(long chatId, String userName , String friendId) {
+        InlineKeyboardMarkup keyboardMarkup = KeyboardFactory.removeFriendConfirmInlineKeyboard("remove_friend:confirm:"+friendId);
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("Are you sure you want to remove friend:\n@" + userName)
+                .replyMarkup(keyboardMarkup)
+                .build();
+
+        try {
+            sender.execute(message);
+        } catch (TelegramApiException e) {
+            logger.error("Friend remove confirmation failed");
+        }
+    }
+
+    public void sendSuccessfullyDeleted(long chatId, String userName) {
+        silent.send("Successfully removed @" + userName + " from friends!", chatId);
+    }
+
+    /**
+     * @param userName userName of a person who removed this one from friends
+     */
+    public void sendDeletedFromFriends(long chatId, String userName) {
+        silent.send("@" + userName + " has removed you from friends. You are no longer sharing location with them! " +
+                "If you want to add them back to friends - send new /add_friend command!", chatId);
     }
 }

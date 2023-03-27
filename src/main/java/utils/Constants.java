@@ -24,6 +24,14 @@ public interface Constants {
         String ABORT_CALLBACK_QUERY = "abort";
     }
 
+    interface RemoveFriendConstants {
+        String ABORT = "Abort❌";
+        String PREVIOUS = "« Previous";
+        String NEXT = "Next »";
+        String ABORT_CALLBACK_QUERY = "remove_friend:abort";
+        String CONFIRM_FRIEND_DELETE = "remove_friend:confirm";
+    }
+
     String SHARE_LOCATION_BUTTON = "Share Location\uD83D\uDCCD";
     String ABORT_BUTTON = "❌";
 }

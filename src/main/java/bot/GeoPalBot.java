@@ -81,13 +81,13 @@ public class GeoPalBot extends AbilityBot {
                 && upd.getCallbackQuery().getData().matches("(accept|decline)_friend_request:\\d*:\\d*");
     }
 
-    @NotNull
-    private Predicate<Update> friendDeleteCallback() {
-        return upd -> upd.getCallbackQuery() != null
-                && upd.getCallbackQuery().getData().matches("(remove_friend:\\d*)" +
-                "|(remove_friend:next:\\d*)" +
-                "|(remove_friend:previous:\\d*)|(remove_friend:abort)");
-    }
+//    @NotNull
+//    private Predicate<Update> friendDeleteCallback() {
+//        return upd -> upd.getCallbackQuery() != null
+//                && upd.getCallbackQuery().getData().matches("(remove_friend:\\d*)" +
+//                "|(remove_friend:next:\\d*)" +
+//                "|(remove_friend:previous:\\d*)|(remove_friend:abort)");
+//    }
 
     /**
      * @return list of chat ids of friends that will receive shared location from the user
@@ -537,6 +537,87 @@ public class GeoPalBot extends AbilityBot {
                     GeoUser user = userStorage.getOrRegister(ctx.user(), ctx.user().getId());
                     responseHandler.sendFriendList(ctx.chatId(), getFriendList(user));
                 })
+                .build();
+    }
+
+    @NotNull
+    private Predicate<Update> isRemoveFriendCallback() {
+        return upd -> upd.getCallbackQuery().getData().matches("(remove_friend:\\d*)|" +
+                "(remove_friend:index:\\d*)|" + "remove_friend:confirm:\\d*|" +
+                Constants.RemoveFriendConstants.ABORT_CALLBACK_QUERY);
+    }
+
+    private String getFriendButtonText(GeoUser friend) {
+        return String.format("@%s", friend.getUser().getUserName());
+    }
+
+    private List<Map.Entry<String, String>> getRemoveFriendButtons(GeoUser user) {
+        List<Map.Entry<String, String>> buttons = new ArrayList<>();
+        int i  = 1;
+        for (GeoUser friend : user.getFriends()) {
+            buttons.add(new AbstractMap.SimpleImmutableEntry<>(String.format("%d) %s", i, getFriendButtonText(friend)),
+                    "remove_friend:" + String.valueOf(friend.getUserId())));
+            i++;
+        }
+        return buttons;
+    }
+
+    @SuppressWarnings("unused")
+    public Ability removeFriend() {
+        return Ability
+                .builder()
+                .name("remove_friend")
+                .info("remove friend from user friend list")
+                .input(0)
+                .privacy(PUBLIC)
+                .locality(USER)
+                .action(ctx -> {
+                    GeoUser user = userStorage.getOrRegister(ctx.user(), ctx.user().getId());
+                    responseHandler.sendFriendListToRemove(ctx.chatId(), getRemoveFriendButtons(user));
+                })
+                .reply((bot, upd) -> {
+                    GeoUser user = userStorage.getOrRegister(upd.getCallbackQuery().getFrom(),
+                            upd.getCallbackQuery().getFrom().getId());
+                    List<Map.Entry<String, String>> buttons = getRemoveFriendButtons(user);
+                    logger.info(upd.getCallbackQuery().getData());
+                    String[] arguments = upd.getCallbackQuery().getData().split(":");
+                    switch (arguments[1]) {
+                        case "index" -> responseHandler.sendFriendListToRemove(
+                                upd.getCallbackQuery().getMessage().getChatId(),
+                                upd.getCallbackQuery().getMessage().getMessageId(),
+                                buttons, Integer.parseInt(arguments[2]));
+                        case "abort" -> {
+                            responseHandler.deleteMessage(upd.getCallbackQuery().getMessage());
+                            responseHandler.abortFriendRemoving(upd.getCallbackQuery().getMessage().getChatId());
+                        }
+                        case "confirm" -> {
+                            GeoUser friend = userStorage.getUser(Long.parseLong(arguments[2]));
+                            if (friend == null) {
+                                logger.error("User is not registered, could not delete him!");
+                                return;
+                            }
+                            user.removeFriend(friend);
+                            friend.removeFriend(user);
+                            responseHandler.sendSuccessfullyDeleted(upd.getCallbackQuery().getMessage().getChatId(), friend.getUser().getUserName());
+                            responseHandler.sendDeletedFromFriends(friend.getChatId(), user.getUser().getUserName());
+                        }
+                        default -> {
+                            // provided the friend he wants to remove
+                            GeoUser friendToRemove = userStorage.getUser(Long.parseLong(arguments[1]));
+                            if (friendToRemove == null) {
+                                logger.error("User is not registered, could not delete him!");
+                                return;
+                            }
+                            if (!user.getFriends().contains(friendToRemove)) {
+                                silent.send("User is no longer your friend! Could not remove him!", user.getChatId());
+                                return;
+                            }
+                            responseHandler.askToConfirmFriendRemove(upd.getCallbackQuery().getMessage().getChatId(),
+                                    friendToRemove.getUser().getUserName(), arguments[1]);
+                        }
+                    }
+
+                }, isRemoveFriendCallback())
                 .build();
     }
 
