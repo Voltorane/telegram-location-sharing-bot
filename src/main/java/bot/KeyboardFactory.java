@@ -12,6 +12,7 @@ import utils.Constants;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Class that is responsible for creating all keyboards i.e. Inline or not
@@ -154,6 +155,7 @@ public class KeyboardFactory {
                 .build();
     }
 
+    // todo change abort callback to unified from constants
     public static InlineKeyboardMarkup friendRequestConfirmInlineKeyboard(String confirmCallback, String abortCallback) {
         return InlineKeyboardMarkup.builder()
                 .keyboardRow(
@@ -168,6 +170,79 @@ public class KeyboardFactory {
                                         .builder()
                                         .text(Constants.FriendRequestConstants.ABORT_SENDING)
                                         .callbackData(abortCallback)
+                                        .build()
+                        )
+                )
+                .build();
+    }
+
+    /**
+     * @param buttons button map with button text as key and callback data as value
+     * @param nextBtnCallback if null, no "next" button will be created
+     * @param previousBtnCallback if null, no "previous" button will be created  */
+    public static InlineKeyboardMarkup removeFriendInlineKeyboard(List<Map.Entry<String, String>> buttons, String nextBtnCallback,
+                                                                  String previousBtnCallback) {
+        InlineKeyboardMarkup keyboardMarkup = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        for (Map.Entry<String, String> button : buttons) {
+            // setting keyboard rows with button text as key and callback data as value
+            rows.add(
+                    List.of(
+                            InlineKeyboardButton.builder()
+                                    .text(button.getKey())
+                                    .callbackData(button.getValue())
+                                    .build()
+                    )
+            );
+        }
+
+        List<InlineKeyboardButton> listInstructionRow = new ArrayList<>();
+        if (previousBtnCallback != null) {
+            listInstructionRow.add(
+                    InlineKeyboardButton
+                            .builder()
+                            .text(Constants.RemoveFriendConstants.PREVIOUS)
+                            .callbackData(previousBtnCallback)
+                            .build()
+            );
+        }
+        if (nextBtnCallback != null) {
+            listInstructionRow.add(
+                    InlineKeyboardButton
+                            .builder()
+                            .text(Constants.RemoveFriendConstants.NEXT)
+                            .callbackData(nextBtnCallback)
+                            .build()
+            );
+        }
+        if (!listInstructionRow.isEmpty())
+            rows.add(listInstructionRow);
+
+
+        InlineKeyboardButton abortButton = InlineKeyboardButton
+                .builder()
+                .text(Constants.RemoveFriendConstants.ABORT)
+                .callbackData(Constants.RemoveFriendConstants.ABORT_CALLBACK_QUERY)
+                .build();
+        // last button is the abort button
+        rows.add(List.of(abortButton));
+        keyboardMarkup.setKeyboard(rows);
+        return keyboardMarkup;
+    }
+
+    public static InlineKeyboardMarkup removeFriendConfirmInlineKeyboard(String confirmCallback) {
+        return InlineKeyboardMarkup.builder()
+                .keyboardRow(
+                        List.of(
+                                InlineKeyboardButton
+                                        .builder()
+                                        .text(Constants.FriendRequestConstants.SEND)
+                                        .callbackData(confirmCallback)
+                                        .build(),
+                                InlineKeyboardButton
+                                        .builder()
+                                        .text(Constants.RemoveFriendConstants.ABORT)
+                                        .callbackData(Constants.RemoveFriendConstants.ABORT_CALLBACK_QUERY)
                                         .build()
                         )
                 )
