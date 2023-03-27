@@ -7,20 +7,17 @@ import org.telegram.abilitybots.api.db.DBContext;
 import org.telegram.abilitybots.api.sender.MessageSender;
 import org.telegram.abilitybots.api.sender.SilentSender;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.MessageEntity;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
-import services.LocationFinder;
 import utils.Constants;
+import utils.Constants.*;
 
-import java.util.ArrayList;
 import java.util.List;
-
-import static org.telegram.abilitybots.api.util.AbilityUtils.getChatId;
 
 /**
  * Class responsible for all communication from bot to user
@@ -42,8 +39,51 @@ public class ResponseHandler {
         silent.send(Constants.greetMessage, chatId);
     }
 
-    public void sendErrorMessage(String message, long chatId) {
-        silent.send(message + Constants.ERROR_MESSAGE_ENDING, chatId);
+    // TODO REMOVE BEFORE SENDING DO PRODUCTION
+    public void send(SendMessage message) {
+        try {
+            sender.execute(message);
+        } catch (TelegramApiException e) {
+            logger.error("Message sending failed: " + e.getMessage());
+        }
+    }
+
+    public void deleteMessage(Message message) {
+        try {
+            sender.execute(DeleteMessage.builder()
+                    .messageId(message.getMessageId())
+                    .chatId(message.getChatId())
+                    .build());
+        } catch (TelegramApiException e) {
+            logger.error("Deleting message failed! {}", e.getMessage());
+        }
+    }
+
+    public void sendActionAbortedMessage(Message incomingAbortMessage) {
+        try {
+            deleteMessage(incomingAbortMessage);
+            sender.execute(SendMessage.builder()
+                    .chatId(incomingAbortMessage.getChatId())
+                    .text("Action aborted!")
+                    .replyMarkup(KeyboardFactory.removeKeyboard())
+                    .build());
+//            silent.send("Action aborted!", incomingAbortMessage.getChatId());
+        } catch (TelegramApiException e) {
+            logger.error("Action abortion notification sending failed!");
+        }
+    }
+
+    public void sendErrorMessage(String text, long chatId) {
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(text + Constants.ERROR_MESSAGE_ENDING)
+                .replyMarkup(KeyboardFactory.removeKeyboard())
+                .build();
+        try {
+            sender.execute(message);
+        } catch (TelegramApiException e) {
+            logger.error("Error sending failed by {}!", chatId);
+        }
     }
 
     /**
@@ -59,7 +99,25 @@ public class ResponseHandler {
         } catch (TelegramApiException e) {
             logger.error("Could not remove inline reply keyboard markup from user {}! {}", chatId, e.getMessage());
         }
+    }
 
+    /**
+     * Sends a dummy message to the user with empty keyboard and instantly deletes it
+     * */
+    public void removeReplyKeyboardMarkup(long chatId) {
+        SendMessage m = SendMessage.builder()
+                .chatId(chatId)
+                .text(".")
+                .replyMarkup(KeyboardFactory.removeKeyboard())
+                .build();
+        Message message = null;
+        try {
+            message = sender.execute(m);
+            DeleteMessage deleteMessage = DeleteMessage.builder().chatId(chatId).messageId(message.getMessageId()).build();
+            sender.execute(deleteMessage);
+        } catch (TelegramApiException e) {
+            logger.error("Removing keyboard failed! {}", e.getMessage());
+        }
     }
 
     /**
@@ -77,6 +135,7 @@ public class ResponseHandler {
                 .chatId(chatId)
                 .build();
         try {
+            // not removing previous reply markup, as we are sending a new one
             logger.info("Sending add friend request to chat {}!", chatId);
             sender.execute(message);
         } catch (TelegramApiException e) {
@@ -87,16 +146,77 @@ public class ResponseHandler {
     }
 
     /**
+     * @return id of the message that is asking to provide further comment for the friend request
+     * */
+    public int askForCommentForFriendRequest(long chatId) {
+        InlineKeyboardMarkup keyboardMarkup =
+                KeyboardFactory.friendRequestCommentInlineKeyboard(FriendRequestConstants.CONFIRM_CALLBACK_QUERY,
+                FriendRequestConstants.ABORT_CALLBACK_QUERY);
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("If you would like to add any comment, that will be attached to the friend request, you can do it now :)" +
+                        " Just send it to me and I will address it to the receiver!")
+                .replyMarkup(keyboardMarkup)
+                .build();
+
+        // message with a choice to provide the comment for the friend request
+        Message inlineMessage;
+        try {
+            // remove previous reply keyboard, as not sending a new one (only inline)
+            removeReplyKeyboardMarkup(chatId);
+            inlineMessage = sender.execute(message);
+        } catch (TelegramApiException e) {
+            logger.error("Asking for comments failed for {}", chatId);
+            // TODO ABORT THE FUNCTION (REMOVE THE KEYBOARD ETC.)
+            // TODO CHANGE THIS TO THROWING AN ERROR
+            return -1;
+        }
+        return inlineMessage.getMessageId();
+    }
+
+    /**
      * Returns String that should be sent to the receiver of the friend request
      *
      * @param userName user name of the sender
-     * @param text text that will be attached with the friend request
+     * @param comment text that will be attached with the friend request
      * @return text that should be sent to the receiver of the friend request
      * */
-    private String getFriendRequestMessage(String userName, String text) {
-        return String.format("You got new friend request from @%s\n\n%s", userName, text);
+    private String getFriendRequestMessage(String userName, String comment) {
+        return String.format("You got new friend request from @%s\n\n%s", userName, comment);
     }
 
+    public void sendFriendRequestPreview(GeoUser requestSender, GeoUser receiver, String comment) {
+        String text = String.format("Please confirm the sending of friend request!\n" +
+                        "@%s will receive a following message from you:\n\n%s",
+                receiver.getUser().getUserName(), comment);
+        InlineKeyboardMarkup keyboardMarkup =
+                KeyboardFactory.friendRequestConfirmInlineKeyboard(FriendRequestConstants.CONFIRM_CALLBACK_QUERY,
+                        FriendRequestConstants.ABORT_CALLBACK_QUERY);
+        SendMessage message = SendMessage.builder()
+                .chatId(requestSender.getChatId())
+                .replyMarkup(keyboardMarkup)
+                .text(text)
+                .build();
+        try {
+            // remove previous reply keyboard
+            removeReplyKeyboardMarkup(requestSender.getChatId());
+            sender.execute(message);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void abortedSendingFriendRequest(GeoUser requestSender) {
+        SendMessage message = SendMessage.builder()
+                .chatId(requestSender.getChatId())
+                .text("Friend request is aborted!")
+                .build();
+        try {
+            sender.execute(message);
+        } catch (TelegramApiException e) {
+            e.printStackTrace();
+        }
+    }
 
     /**
      * Sends message to {@code requestSender} and {@code receiver} informing about the friend request
@@ -197,11 +317,19 @@ public class ResponseHandler {
      * Sends result notification to the location sharer {@code user}
      * */
     public void sendLocationSharingResult(GeoUser user, boolean success) {
+        SendMessage message = SendMessage.builder()
+                .chatId(user.getChatId())
+                .replyMarkup(KeyboardFactory.removeKeyboard())
+                .build();
         if (success) {
-            silent.send("Successfully shared location with your geo pals!",
-                    user.getChatId());
+            message.setText("Successfully shared location with your geo pals!");
         } else {
-            sendErrorMessage("Location sharing failed!", user.getChatId());
+            message.setText("Location sharing failed! Please try again later!");
+        }
+        try {
+            sender.execute(message);
+        } catch (TelegramApiException e) {
+            logger.error("Sending location sharing result failed!");
         }
     }
 
@@ -238,14 +366,6 @@ public class ResponseHandler {
         }
         for (long chatId : chatIds) {
             try {
-                // TODO REMOVE COMMENTS
-//                MessageEntity entity = MessageEntity.builder()
-//                        .type("mention")
-//                        .offset(0)
-//                        .length(user.getUser().getUserName().length())
-//                        .user(user.getUser())
-//                        .build();
-                // resetting message chat id to chat ids from the list
                 message.setChatId(chatId);
 //                SendMessage message = SendMessage.builder()
 ////                        .entities(List.of(entity))

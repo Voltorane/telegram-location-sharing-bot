@@ -1,6 +1,6 @@
 package exceptions;
 
-public class UserNotRegisteredException extends Exception{
+public class UserNotRegisteredException extends RuntimeException{
     public UserNotRegisteredException(String message) {
         super(message);
     }

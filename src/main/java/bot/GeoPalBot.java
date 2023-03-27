@@ -6,13 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.jetbrains.annotations.NotNull;
 import org.telegram.abilitybots.api.bot.AbilityBot;
-import org.telegram.abilitybots.api.objects.Ability;
-import org.telegram.abilitybots.api.objects.Flag;
-import org.telegram.abilitybots.api.objects.Reply;
-import org.telegram.abilitybots.api.objects.ReplyFlow;
-import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.abilitybots.api.objects.*;
 import org.telegram.telegrambots.meta.api.objects.*;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import services.LocationFinder;
 import bot.storage.GeoUser;
@@ -21,7 +16,7 @@ import utils.ConfigLoader;
 import utils.Constants;
 
 import java.io.IOException;
-import java.util.List;
+import java.util.*;
 import java.util.function.Predicate;
 
 import static org.telegram.abilitybots.api.objects.Locality.USER;
@@ -34,6 +29,8 @@ public class GeoPalBot extends AbilityBot {
 
     private final GeoUserStorage userStorage;
     private final ResponseHandler responseHandler;
+    //    private final FriendRequestingService friendRequestingService;
+    public Map<Long, OngoingFriendRequest> ongoingFriendRequests = new HashMap<>();
 
     /**
      * Constructor for the LocationSharingBot
@@ -56,6 +53,7 @@ public class GeoPalBot extends AbilityBot {
         }
         responseHandler = new ResponseHandler(sender, silent, db);
         userStorage = new GeoUserStorage();
+//        friendRequestingService = new FriendRequestingService();
 
         java.io.File logsDir = new java.io.File("logs");
         if (!logsDir.exists()) {
@@ -65,10 +63,6 @@ public class GeoPalBot extends AbilityBot {
                 logger.error("Failed to create logs directory");
             }
         }
-
-        logger.error("An error occurred");
-        logger.warn("A warning occurred");
-        logger.info("An informational message");
     }
 
     @Override
@@ -84,14 +78,12 @@ public class GeoPalBot extends AbilityBot {
     @NotNull
     private Predicate<Update> friendRequestCallback() {
         return upd -> upd.getCallbackQuery() != null
-//                && new AddFriendCommand(upd.getCallbackQuery()).isValid();
                 && upd.getCallbackQuery().getData().matches("(accept|decline)_friend_request:\\d*:\\d*");
     }
 
     @NotNull
     private Predicate<Update> friendDeleteCallback() {
         return upd -> upd.getCallbackQuery() != null
-//                && new RemoveFriendCommand(upd.getCallbackQuery()).isValid();
                 && upd.getCallbackQuery().getData().matches("(remove_friend:\\d*)" +
                 "|(remove_friend:next:\\d*)" +
                 "|(remove_friend:previous:\\d*)|(remove_friend:abort)");
@@ -99,7 +91,7 @@ public class GeoPalBot extends AbilityBot {
 
     /**
      * @return list of chat ids of friends that will receive shared location from the user
-     * */
+     */
     private List<Long> getFriendChatIdsToShareLocationWith(GeoUser user) {
         return user.getFriends().stream().map(GeoUser::getChatId).toList();
     }
@@ -118,6 +110,8 @@ public class GeoPalBot extends AbilityBot {
                 .locality(USER)
                 .action(ctx -> {
                     responseHandler.replyToStart(ctx.chatId());
+                    // TODO MOVE TO REGISTER ABILITY
+//                    responseHandler.removeReplyKeyboardMarkup(ctx.chatId());
                     // TODO add distinction between correct registering of a user and one with exceptions
                     this.userStorage.addUser(ctx.user(), ctx.chatId());
                 })
@@ -132,9 +126,9 @@ public class GeoPalBot extends AbilityBot {
      * Sends location to all friends of the {@code user}. Text with location is generated
      * by the {@code getLocationText()}.
      *
-     * @param user sender of the location text
+     * @param user     sender of the location text
      * @param location Telegram Bot API location, that will be sent to friends of the user
-     * */
+     */
     private void sendLocationToFriends(User user, Location location) throws IOException, UserNotRegisteredException {
         if (location == null) {
             throw new RuntimeException("Location was not provided!");
@@ -142,7 +136,7 @@ public class GeoPalBot extends AbilityBot {
         LocationFinder.Location parsedLocation
                 = LocationFinder.getLocation(location.getLatitude(), location.getLongitude());
         String locationText = getLocationText(user.getUserName(), parsedLocation);
-        GeoUser locationSender = userStorage.getUser(user.getId());
+        GeoUser locationSender = userStorage.getOrRegister(user, user.getId());
 
         try {
             responseHandler.sendLocationToFriends(locationSender,
@@ -202,7 +196,7 @@ public class GeoPalBot extends AbilityBot {
 
     /**
      * Ability that represents the "/share_location" command from user
-     * */
+     */
     @SuppressWarnings("unused")
     public Ability askLocation() {
         return Ability
@@ -276,33 +270,30 @@ public class GeoPalBot extends AbilityBot {
      * Performs action if user was shared by add_friend ability
      *
      * @param upd update with shared user in message
-     * */
-    private void friendRequestUserShared(Update upd) {
+     * @throws IllegalArgumentException if user was not shared for some reason
+     * @throws UserNotRegisteredException if user that was shared is not registered
+     */
+    private OngoingFriendRequest friendRequestUserShared(Update upd) {
         UserShared userShared = upd.getMessage().getUserShared();
         if (userShared == null) {
-            responseHandler.sendErrorMessage("User was not shared!", getChatId(upd));
-            return;
+            throw new IllegalArgumentException("User was not shared!");
         }
-        if (!userStorage.getUsers().containsKey(userShared.getUserId())) {
-            responseHandler.sendErrorMessage("User is not registered by @" + this.getBotUsername() +
-                    "! Please advise him to register and try again!", getChatId(upd));
-            return;
+        GeoUser sender = userStorage.getOrRegister(upd.getMessage().getFrom(), upd.getMessage().getFrom().getId());
+        GeoUser receiver = userStorage.getUser(userShared.getUserId());
+        if (receiver == null) {
+            throw new UserNotRegisteredException("User is not registered by @" + this.getBotUsername() +
+                    "! Please advise him to register and try again!");
         }
-        try {
-            GeoUser sender = userStorage.getUser(upd.getMessage().getFrom().getId());
-            GeoUser friend = userStorage.getUser(userShared.getUserId());
-            // todo change to proper invitation text
-            responseHandler.sendFriendRequest(sender, friend, "Would you like to be my friend?");
-        } catch (Exception e) {
-            responseHandler.sendErrorMessage(e.getMessage(), getChatId(upd));
-        }
+        OngoingFriendRequest request = new OngoingFriendRequest(sender, receiver);
+        ongoingFriendRequests.put(sender.getUserId(), request);
+        return request;
     }
 
     /**
-     * Performs action if friend request was answered by the receiver by add_friend ability
+     * Performs action if friend request was answered by the receiver
      *
      * @param upd update with answer query in {@code upd.callbackQuery.data}
-     * */
+     */
     private void friendRequestAnswered(Update upd) {
         String[] arguments = upd.getCallbackQuery().getData().split(":");
         if (arguments.length != 3) {
@@ -312,24 +303,21 @@ public class GeoPalBot extends AbilityBot {
                     upd.getCallbackQuery().getMessage().getChatId());
         }
 
-        GeoUser sender;
-        try {
-            sender = userStorage.getUser(Long.parseLong(arguments[1]));
-        } catch (UserNotRegisteredException e) {
+        GeoUser sender = userStorage.getUser(Long.parseLong(arguments[1]));
+        if (sender == null) {
             responseHandler.sendErrorMessage("You are not registered by the bot!" +
                     " Please do so with the /start command", upd.getCallbackQuery().getMessage().getChatId());
             return;
         }
 
-        GeoUser receiver;
-        try {
-            receiver = userStorage.getUser(Long.parseLong(arguments[2]));
-        } catch (UserNotRegisteredException e) {
+        GeoUser receiver = userStorage.getUser(Long.parseLong(arguments[2]));
+        if (receiver == null) {
             responseHandler.sendErrorMessage("User is not registered by the bot!" +
-                    " Please advise them to register to use this functionality",
+                            " Please advise them to register to use this functionality",
                     upd.getCallbackQuery().getMessage().getChatId());
             return;
         }
+
         GeoUser.FriendRequest request = receiver.getIncomingFriendRequests().get(sender);
         switch (arguments[0]) {
             case "accept_friend_request" -> {
@@ -355,30 +343,167 @@ public class GeoPalBot extends AbilityBot {
         return Reply.of((bot, upd) -> friendRequestAnswered(upd), friendRequestCallback());
     }
 
+    @NotNull
+    private Predicate<Update> hasOngoingFriendRequests() {
+        return upd -> {
+            User user = upd.getMessage().getFrom();
+            GeoUser geoUser = userStorage.getOrRegister(user, user.getId());
+            return ongoingFriendRequests.containsKey(geoUser.getUserId());
+        };
+    }
+
+    @SuppressWarnings("unused")
+    public Reply actionAborted() {
+        return Reply.of((bot, upd) -> responseHandler.sendActionAbortedMessage(upd.getMessage()),
+                // check that bot received an abort command and has no ongoing actions (friend requesting)
+                upd -> upd.getMessage().getText().equals("❌") && !hasOngoingFriendRequests().test(upd));
+    }
+
+    /**
+     * Function that returns predicate for an {@link Update} that checks if update message is a command
+     */
+    @NotNull
+    private Predicate<Update> isCommand() {
+        return upd -> upd.getMessage().isCommand();
+    }
+
+    /**
+     * Function that returns predicate for an {@link Update} that checks if callbackQuery data of that update is
+     * equal to the {@code callbackData}
+     *
+     * @param callbackData data that will be compared to the callbackQuery data of an update
+     * @return predicate for an {@link Update} that checks if callbackQuery data of that update is
+     * equal to the {@code callbackData}
+     */
+    @NotNull
+    private Predicate<Update> hasCallbackWith(String callbackData) {
+        return upd -> upd.getCallbackQuery().getData().equals(callbackData);
+    }
+
+    /**
+     * Function that returns predicate for an {@link Update} that checks if user shared by this update is registered by the bot
+     * */
+    @NotNull
+    private Predicate<Update> userSharedRegistered() {
+        return upd -> userStorage.getUsers().containsKey(upd.getMessage().getUserShared().getUserId());
+    }
+
+    /**
+     * {@link ReplyFlow} that represents the flow of sending, receiving and getting response of the
+     * friend request
+     */
+    @SuppressWarnings("unused")
     public ReplyFlow friendRequestFlow() {
-        Reply hasComments = Reply.of((bot, upd) -> logger.info("{} has comments: {}",
-                        upd.getMessage().getChatId(), upd.getMessage().getText()),
-                upd -> !upd.getMessage().getText().isEmpty());
+        // some messages in friend request flow, user can click the abort button, that ends the friend request
+        Reply abortFriendRequest = Reply.of(
+                (bot, upd) -> {
+                    Message messageReceived = upd.getCallbackQuery().getMessage();
+                    User user = upd.getCallbackQuery().getFrom();
+                    GeoUser sender = userStorage.getOrRegister(user, user.getId());
+                    logger.info("{} aborted request", messageReceived.getChatId());
 
-        Reply noComments = Reply.of((bot, upd) -> logger.info("{} has no comments", upd.getMessage().getChatId()),
-                upd -> !upd.getCallbackQuery().getData().isEmpty()
-                        && !upd.getCallbackQuery().getData().equals("no_comments"));
+                    responseHandler.abortedSendingFriendRequest(sender);
+                    // removing ongoing friend request indicates finish of the request
+                    ongoingFriendRequests.remove(sender.getUserId());
+                    // deleting message as it's no longer needed
+                    responseHandler.deleteMessage(upd.getCallbackQuery().getMessage());
+                }, hasCallbackWith(Constants.FriendRequestConstants.ABORT_CALLBACK_QUERY));
 
-        ReplyFlow userSharedFlow = ReplyFlow.builder(db)
-                .onlyIf(upd -> upd.getMessage().getUserShared() != null)
-                .action((bot, upd) -> friendRequestUserShared(upd))
-                .next(hasComments)
-                .next(noComments)
+        // used for both cases, when user has no comments and when he sends the friend request after the preview
+        Reply confirmedSendingFriendRequest = Reply.of(
+                (bot, upd) -> {
+//                    Message messageReceived =
+                    User user = upd.getCallbackQuery().getFrom();
+                    GeoUser sender = userStorage.getOrRegister(user, user.getId());
+                    OngoingFriendRequest wrapper = ongoingFriendRequests.get(sender.getUserId());
+                    logger.info("{} confirmed sending friend request!", user.getId());
+
+                    // sending an actual friend request to the recipient
+                    responseHandler.sendFriendRequest(wrapper.getSender(), wrapper.getReceiver(), wrapper.getComment());
+                    // removing ongoing friend request indicates finish of the request
+                    ongoingFriendRequests.remove(sender.getUserId());
+                    responseHandler.removeInlineKeyboard(sender.getChatId(), upd.getCallbackQuery().getMessage().getMessageId());
+                }, hasCallbackWith(Constants.FriendRequestConstants.CONFIRM_CALLBACK_QUERY));
+
+//        Reply noComments = Reply.of(
+//                (bot, upd) -> {
+//                    long chatId = upd.getCallbackQuery().getMessage().getChatId();
+//                    logger.info("{} has no comments", chatId);
+//                    Message messageReceived = upd.getCallbackQuery().getMessage();
+//                    User user = messageReceived.getFrom();
+//                    GeoUser sender = userStorage.getOrRegister(user, user.getId());
+//
+//                    OngoingFriendRequest wrapper = ongoingFriendRequests.get(sender);
+//                    responseHandler.sendFriendRequest(wrapper.getSender(), wrapper.getReceiver(), "");
+//                    ongoingFriendRequests.remove(sender);
+//                    responseHandler.removeInlineKeyboard(chatId, upd.getCallbackQuery().getMessage().getMessageId());
+//                }, hasCallbackWith(Constants.FriendRequestConstants.CONFIRM_CALLBACK_QUERY));
+
+        // user has written text as reply bot
+        ReplyFlow hasCommentsFlow = ReplyFlow.builder(db)
+                .onlyIf(upd -> !upd.getMessage().getText().isEmpty() && !upd.getMessage().isCommand())
+                .action((bot, upd) -> {
+                    Message messageReceived = upd.getMessage();
+                    User user = messageReceived.getFrom();
+                    GeoUser sender = userStorage.getOrRegister(user, user.getId());
+                    logger.info("{} has comments: {}", messageReceived.getChatId(), messageReceived.getText());
+
+                    OngoingFriendRequest wrapper = ongoingFriendRequests.get(sender.getUserId());
+                    // comment will be accessible when confirming the friend request sending
+                    wrapper.setComment(upd.getMessage().getText());
+                    // request preview has options as to send the friend request or abort it
+                    responseHandler.sendFriendRequestPreview(wrapper.getSender(), wrapper.getReceiver(), wrapper.getComment());
+                    // remove keyboard from the message that asked for further comments
+                    responseHandler.removeInlineKeyboard(messageReceived.getChatId(), wrapper.getSenderInlineMessageId());
+                })
+                .next(confirmedSendingFriendRequest)
+                .next(abortFriendRequest)
                 .build();
-//        Reply abort = Reply.of((bot, upd) -> logger.info("{} has comments: {}",
-//                        upd.getMessage().getChatId(), upd.getMessage().getText()),
-//                upd -> !upd.getCallbackQuery().getData().isEmpty()
-//                        && !upd.getCallbackQuery().getData().equals("no_comments"));
+//        Reply abortedSendingFriendRequest = Reply.of(
+//                (bot, upd) -> {
+//                    logger.info("{} aborted sending friend request!", upd.getCallbackQuery().getFrom().getId());
+//                    Message messageReceived = upd.getCallbackQuery().getMessage();
+//                    User user = messageReceived.getFrom();
+//                    GeoUser sender = userStorage.getOrRegister(user, user.getId());
+//
+//                    responseHandler.abortedSendingFriendRequest(sender);
+//                    ongoingFriendRequests.remove(sender);
+//                    // TODO think of removing the message completely and not only the keyboard
+//                    responseHandler.removeInlineKeyboard(sender.getChatId(),
+//                            messageReceived.getMessageId());
+//                }, hasCallbackWith(Constants.FriendRequestConstants.ABORT_CALLBACK_QUERY));
+        ReplyFlow userSharedFlow = ReplyFlow.builder(db)
+                .onlyIf(userSharedRegistered())
+                .action((bot, upd) -> {
+                    Message messageReceived = upd.getMessage();
+                    OngoingFriendRequest wrapper;
+                    try {
+                        wrapper = friendRequestUserShared(upd);
+                    } catch (UserNotRegisteredException | IllegalArgumentException e) {
+                        // recipient is not registered or user wasn't shared
+                        responseHandler.sendErrorMessage(e.getMessage(), messageReceived.getChatId());
+                        return;
+                    }
+                    int inlineMessageId = responseHandler.askForCommentForFriendRequest(messageReceived.getChatId());
+                    // storing inlineMessageId in ongoing request to remove inline keyboard, after request is done
+                    wrapper.setSenderInlineMessageId(inlineMessageId);
+                })
+                .next(hasCommentsFlow)
+                .next(confirmedSendingFriendRequest)
+                .next(abortFriendRequest)
+                .build();
+
+        Reply userSharedNotRegistered = Reply.of(
+                (bot, upd) -> {
+                    responseHandler.sendErrorMessage("User is not registered by @" + this.getBotUsername() +
+                            "! Please advise him to register and try again! ", upd.getMessage().getChatId());
+                }, upd -> !userSharedRegistered().test(upd));
 
         return ReplyFlow.builder(db)
                 .onlyIf(hasMessageWith("/add_friend"))
                 .action((bot, upd) -> responseHandler.askToShareFriendToAdd(upd.getMessage().getChatId()))
                 .next(userSharedFlow)
+                .next(userSharedNotRegistered)
                 .build();
     }
 
