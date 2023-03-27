@@ -1,6 +1,5 @@
-package bot;
+package bot.model;
 
-import bot.storage.GeoUser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.telegram.abilitybots.api.db.DBContext;
@@ -17,10 +16,8 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import utils.Constants;
 import utils.Constants.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Class responsible for all communication from bot to user
@@ -30,6 +27,7 @@ public class ResponseHandler {
     private final MessageSender sender;
     private final SilentSender silent;
     private DBContext db;
+    private static final int MAX_BUTTONS_PER_LIST = 5;
 
     public ResponseHandler(MessageSender sender,
                            SilentSender silent, DBContext db) {
@@ -38,45 +36,57 @@ public class ResponseHandler {
         this.db = db;
     }
 
+    /**
+     * Sends greet message to user
+     *
+     * @param chatId chat of the user to greet
+     * */
     public void replyToStart(long chatId) {
         silent.send(Constants.greetMessage, chatId);
     }
 
-    // TODO REMOVE BEFORE SENDING DO PRODUCTION
-    public void send(SendMessage message) {
-        try {
-            sender.execute(message);
-        } catch (TelegramApiException e) {
-            logger.error("Message sending failed: " + e.getMessage());
-        }
-    }
-
-    public void deleteMessage(Message message) {
+    /**
+     * Deletes message from user's chat
+     *
+     * @param chatId chat to delete message from
+     * @param messageId message to delete
+     * */
+    public void deleteMessage(Long chatId, int messageId) {
         try {
             sender.execute(DeleteMessage.builder()
-                    .messageId(message.getMessageId())
-                    .chatId(message.getChatId())
+                    .messageId(messageId)
+                    .chatId(chatId)
                     .build());
         } catch (TelegramApiException e) {
             logger.error("Deleting message failed! {}", e.getMessage());
         }
     }
 
+    /**
+     * Sends notification message that previous action was aborted
+     *
+     * @param incomingAbortMessage message that raised an abort
+     * */
     public void sendActionAbortedMessage(Message incomingAbortMessage) {
         try {
-            deleteMessage(incomingAbortMessage);
+            deleteMessage(incomingAbortMessage.getChatId(), incomingAbortMessage.getMessageId());
             sender.execute(SendMessage.builder()
                     .chatId(incomingAbortMessage.getChatId())
                     .text("Action aborted!")
                     .replyMarkup(KeyboardFactory.removeKeyboard())
                     .build());
-//            silent.send("Action aborted!", incomingAbortMessage.getChatId());
         } catch (TelegramApiException e) {
             logger.error("Action abortion notification sending failed!");
         }
     }
 
-    public void sendErrorMessage(String text, long chatId) {
+    /**
+     * Sends error message to user
+     *
+     * @param chatId chat to send error message to
+     * @param text text of the error message (additional error ending will be added)
+     * */
+    public void sendErrorMessage(long chatId, String text) {
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
                 .text(text + Constants.ERROR_MESSAGE_ENDING)
@@ -113,7 +123,7 @@ public class ResponseHandler {
                 .text(".")
                 .replyMarkup(KeyboardFactory.removeKeyboard())
                 .build();
-        Message message = null;
+        Message message;
         try {
             message = sender.execute(m);
             DeleteMessage deleteMessage = DeleteMessage.builder().chatId(chatId).messageId(message.getMessageId()).build();
@@ -143,15 +153,17 @@ public class ResponseHandler {
             sender.execute(message);
         } catch (TelegramApiException e) {
             logger.error("Sending Add friend Request to chat {} failed! {}", chatId, e.getMessage());
-            // TODO MAKE SEND ERROR TO USER AND ABORT THE REQUEST
-            sendErrorMessage("Add friend request failed! Please try again!", chatId);
+            sendErrorMessage(chatId, "Add friend request failed! Please try again!");
         }
     }
 
     /**
+     * Sends a message that asks the user if he wants to give any additional comments to the friend request
+     *
+     * @param chatId chat the message will be sent to
      * @return id of the message that is asking to provide further comment for the friend request
      * */
-    public int askForCommentForFriendRequest(long chatId) {
+    public Integer askForCommentForFriendRequest(long chatId) {
         InlineKeyboardMarkup keyboardMarkup =
                 KeyboardFactory.friendRequestCommentInlineKeyboard(FriendRequestConstants.CONFIRM_CALLBACK_QUERY,
                 FriendRequestConstants.ABORT_CALLBACK_QUERY);
@@ -163,18 +175,14 @@ public class ResponseHandler {
                 .build();
 
         // message with a choice to provide the comment for the friend request
-        Message inlineMessage;
         try {
             // remove previous reply keyboard, as not sending a new one (only inline)
             removeReplyKeyboardMarkup(chatId);
-            inlineMessage = sender.execute(message);
+            return sender.execute(message).getMessageId();
         } catch (TelegramApiException e) {
             logger.error("Asking for comments failed for {}", chatId);
-            // TODO ABORT THE FUNCTION (REMOVE THE KEYBOARD ETC.)
-            // TODO CHANGE THIS TO THROWING AN ERROR
-            return -1;
+            return null;
         }
-        return inlineMessage.getMessageId();
     }
 
     /**
@@ -189,9 +197,11 @@ public class ResponseHandler {
     }
 
     public void sendFriendRequestPreview(GeoUser requestSender, GeoUser receiver, String comment) {
-        String text = String.format("Please confirm the sending of friend request!\n" +
-                        "@%s will receive a following message from you:\n\n%s",
-                receiver.getUser().getUserName(), comment);
+        String text = String.format("""
+                        Please confirm the sending of friend request!
+                        @%s will receive a following message from you:
+
+                        %s""", receiver.getUser().getUserName(), comment);
         InlineKeyboardMarkup keyboardMarkup =
                 KeyboardFactory.friendRequestConfirmInlineKeyboard(FriendRequestConstants.CONFIRM_CALLBACK_QUERY,
                         FriendRequestConstants.ABORT_CALLBACK_QUERY);
@@ -229,11 +239,10 @@ public class ResponseHandler {
      * @param requestText   text that will be visible to the receiver
      */
     public void sendFriendRequest(GeoUser requestSender, GeoUser receiver, String requestText) {
-        // TODO move callback query generation to separate place
         String acceptFriendRequestCallback =
-                String.format("accept_friend_request:%s:%s", requestSender.getUserId(), receiver.getUserId());
+                CallbackQueryDataFactory.FriendRequestAnswer.acceptRequest(requestSender.getUserId(), receiver.getUserId());
         String declineFriendRequestCallback =
-                String.format("decline_friend_request:%s:%s", requestSender.getUserId(), receiver.getUserId());
+                CallbackQueryDataFactory.FriendRequestAnswer.declineRequest(requestSender.getUserId(), receiver.getUserId());
         InlineKeyboardMarkup keyboardMarkup = KeyboardFactory.friendRequestInlineKeyboard(acceptFriendRequestCallback,
                 declineFriendRequestCallback);
 
@@ -262,7 +271,7 @@ public class ResponseHandler {
                     .build();
             sender.execute(messageToSender);
         } catch (TelegramApiException e) {
-            sendErrorMessage(e.getMessage(), requestSender.getChatId());
+            sendErrorMessage(requestSender.getChatId(), e.getMessage());
         }
     }
 
@@ -311,8 +320,7 @@ public class ResponseHandler {
             sender.execute(message);
         } catch (TelegramApiException e) {
             logger.error("Sending location request to chat {} failed! {}", chatId, e.getMessage());
-            // TODO MAKE SEND ERROR TO USER AND ABORT THE REQUEST
-            sendErrorMessage("Send location request failed! Please try again!", chatId);
+            sendErrorMessage(chatId, "Send location request failed! Please try again!");
         }
     }
 
@@ -322,6 +330,8 @@ public class ResponseHandler {
     public void sendLocationSharingResult(GeoUser user, boolean success) {
         SendMessage message = SendMessage.builder()
                 .chatId(user.getChatId())
+                //text will be changed
+                .text(" ")
                 .replyMarkup(KeyboardFactory.removeKeyboard())
                 .build();
         if (success) {
@@ -348,6 +358,8 @@ public class ResponseHandler {
     public void sendLocationToFriends(GeoUser user, List<Long> chatIds, String locationText) throws TelegramApiException {
         SendMessage locationMessage = SendMessage
                 .builder()
+                // chat id must be changed in the sendMessageToChats
+                .chatId(0L)
                 .text(locationText)
                 .build();
         sendMessageToChats(user, chatIds, locationMessage);
@@ -370,11 +382,6 @@ public class ResponseHandler {
         for (long chatId : chatIds) {
             try {
                 message.setChatId(chatId);
-//                SendMessage message = SendMessage.builder()
-////                        .entities(List.of(entity))
-//                        .chatId(chatId)
-//                        .text(text)
-//                        .build();
                 sender.execute(message);
             } catch (TelegramApiException e) {
                 logger.error("Text sending failed by user: {}", user.getChatId());
@@ -383,74 +390,97 @@ public class ResponseHandler {
         }
     }
 
+    /**
+     * Sends a text representation of the friendList to user
+     *
+     * @param chatId user's chat that will receive the message
+     * @param friendList text representation of his friend
+     * */
     public void sendFriendList(Long chatId, String friendList) {
-        String text = friendList.isEmpty()
-                ?"You don't have any friends yet :( You can add them via /add_friend command"
-                : "Here are your friends:\n" + friendList;
-        silent.send(text, chatId);
-    }
-
-    public void abortFriendRemoving(long chatId) {
-        silent.send("Friend removing aborted!", chatId);
-    }
-
-    public void sendFriendListToRemove(long chatId, List<Map.Entry<String, String>> buttons) {
-        if (buttons.isEmpty()) {
-            silent.send("You don't have any friends yet :( You can add them via /add_friend command", chatId);
-            return;
-        }
-        int maxAmount = 5;
-        // list that will be sent to user
-        List<Map.Entry<String, String>> resultList = buttons.subList(0, Math.min(buttons.size(), maxAmount));
-        String nextBtnCallback = resultList.size() < maxAmount ? null : "remove_friend:index:5";
-        // don't need "previousButton" in the first list
-        InlineKeyboardMarkup keyboardMarkup = KeyboardFactory.removeFriendInlineKeyboard(resultList, nextBtnCallback, null);
-
-        SendMessage message = SendMessage.builder()
-                .chatId(chatId)
-                .text("Please select friend you want to remove:")
-                .replyMarkup(keyboardMarkup)
-                .build();
-        try {
-            sender.execute(message);
-        } catch (TelegramApiException e) {
-            logger.error("Sending remove friend list failed: {}", e.getMessage());
+        if (friendList.isEmpty()) {
+            sendHasNoFriends(chatId);
+        } else {
+            silent.send("Here are your friends:\n" + friendList, chatId);
         }
     }
 
-    public void sendFriendListToRemove(long chatId, int messageId, List<Map.Entry<String, String>> buttons, int startIndex) {
+//    public void abortFriendRemoving(long chatId) {
+//        silent.send("Friend removing aborted!", chatId);
+//    }
+
+    /**
+     * If {@code isFirstMessage} is {@code true} - sends a message to the user with an inline keyboard with friend
+     * that can be removed
+     * Otherwise - method is called for an already existing message with {@code messageId} and the keyboard is edited
+     * in that particular message.
+     *
+     * @param chatId id of user's chat
+     * @param buttons list of buttons in format [buttonText, buttonCallback]
+     * @param startIndex index from which buttons will be sent inclusive
+     * @param isFirstMessage if true - sends a message to the user with an inline keyboard with friend
+     * that can be removed. Otherwise method is called for an already existing message with {@code messageId} and the keyboard is edited
+     * in that particular message
+     * */
+    public void sendFriendListToRemove(long chatId, Integer messageId, List<Map.Entry<String, String>> buttons,
+                                       int startIndex, boolean isFirstMessage) {
         if (buttons.size() <= startIndex) {
             logger.error("Button list is smaller than start index");
             return;
+        } else if (startIndex < 0) {
+            logger.error("Start index cannot be negative!");
+            return;
         }
-        int maxAmount = startIndex + 5;
+        int lastIndex = startIndex + MAX_BUTTONS_PER_LIST - 1;
         // list that will be sent to user
-        List<Map.Entry<String, String>> resultList = buttons.subList(startIndex, Math.min(buttons.size(), maxAmount));
-        String nextBtnCallback = buttons.size() - 1 <= maxAmount
+        List<Map.Entry<String, String>> resultList = buttons.subList(startIndex, Math.min(buttons.size(), lastIndex + 1));
+        // if last button index is less that the generated one -> need no next button (this is the last page)
+        String nextBtnCallback = buttons.size() - 1 <= lastIndex
                 ? null
-                : "remove_friend:index:" + Math.min(buttons.size() - 1, maxAmount);
-        String prevBtnCallback = startIndex + resultList.size() <= 5
+                : CallbackQueryDataFactory.RemoveFriend.getNewIndexCallback(Math.min(buttons.size() - 1, lastIndex + 1));
+        String prevBtnCallback = startIndex + resultList.size() <= MAX_BUTTONS_PER_LIST
                 ? null
-                : "remove_friend:index:" + Math.max(0, startIndex - 5);
-        // don't need "previousButton" in the first list
+                : CallbackQueryDataFactory.RemoveFriend.getNewIndexCallback(Math.max(0, startIndex - MAX_BUTTONS_PER_LIST));
         InlineKeyboardMarkup keyboardMarkup =
                 KeyboardFactory.removeFriendInlineKeyboard(resultList, nextBtnCallback, prevBtnCallback);
-
-        EditMessageReplyMarkup editMessageReplyMarkup = EditMessageReplyMarkup
-                .builder()
-                .chatId(chatId)
-                .messageId(messageId)
-                .replyMarkup(keyboardMarkup)
-                .build();
-        try {
-            sender.execute(editMessageReplyMarkup);
-        } catch (TelegramApiException e) {
-            logger.error("Sending remove friend list failed: {}", e.getMessage());
+        if (isFirstMessage) {
+            // need to send a message and attach the list to it
+            SendMessage message = SendMessage.builder()
+                    .chatId(chatId)
+                    .text("Please select friend you want to remove:")
+                    .replyMarkup(keyboardMarkup)
+                    .build();
+            try {
+                sender.execute(message);
+            } catch (TelegramApiException e) {
+                logger.error("Sending remove friend list failed: {}", e.getMessage());
+            }
+        } else {
+            assert messageId != null;
+            // only editing the message if it's already there
+            EditMessageReplyMarkup editMessageReplyMarkup = EditMessageReplyMarkup
+                    .builder()
+                    .chatId(chatId)
+                    .messageId(messageId)
+                    .replyMarkup(keyboardMarkup)
+                    .build();
+            try {
+                sender.execute(editMessageReplyMarkup);
+            } catch (TelegramApiException e) {
+                logger.error("Sending remove friend list failed: {}", e.getMessage());
+            }
         }
     }
 
+    /**
+     Sends a confirmation message to a Telegram chat asking if the user wants to remove a friend.
+
+     @param chatId the ID of the Telegram chat where the message should be sent.
+     @param userName the username of the friend to be removed.
+     @param friendId the ID of the friend to be removed.
+     */
     public void askToConfirmFriendRemove(long chatId, String userName , String friendId) {
-        InlineKeyboardMarkup keyboardMarkup = KeyboardFactory.removeFriendConfirmInlineKeyboard("remove_friend:confirm:"+friendId);
+        InlineKeyboardMarkup keyboardMarkup =
+                KeyboardFactory.removeFriendConfirmInlineKeyboard(CallbackQueryDataFactory.RemoveFriend.getConfirmCallback(friendId));
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
                 .text("Are you sure you want to remove friend:\n@" + userName)
@@ -464,15 +494,33 @@ public class ResponseHandler {
         }
     }
 
+    /**
+     * Sends a message to a Telegram chat confirming that a friend has been successfully deleted.
+     *
+     * @param chatId    the ID of the Telegram chat where the message should be sent.
+     * @param userName  the username of the friend who was deleted.
+     */
     public void sendSuccessfullyDeleted(long chatId, String userName) {
         silent.send("Successfully removed @" + userName + " from friends!", chatId);
     }
 
     /**
-     * @param userName userName of a person who removed this one from friends
+     * Sends a message to a Telegram chat informing a user that they have been removed from a friend's list.
+     *
+     * @param chatId    the ID of the Telegram chat where the message should be sent.
+     * @param userName  the username of the friend who removed the user.
      */
     public void sendDeletedFromFriends(long chatId, String userName) {
         silent.send("@" + userName + " has removed you from friends. You are no longer sharing location with them! " +
                 "If you want to add them back to friends - send new /add_friend command!", chatId);
+    }
+
+    /**
+     * Sends a message to a Telegram chat informing the user that they don't have any friends yet.
+     *
+     * @param chatId    the ID of the Telegram chat where the message should be sent.
+     */
+    public void sendHasNoFriends(long chatId) {
+        silent.send("You don't have any friends yet :( You can add them via /add_friend command", chatId);
     }
 }

@@ -1,15 +1,17 @@
-package bot.storage;
+package bot.model;
 
 import org.telegram.telegrambots.meta.api.objects.User;
 
+import java.io.Serializable;
 import java.util.*;
 
-public class GeoUser {
+public class GeoUser implements Serializable {
     private final long userId;
     private final long chatId;
     private final User user;
 
-    public static record FriendRequest(GeoUser sender, GeoUser receiver, String text, Integer inlineMessageId) {
+    public static record FriendRequest(GeoUser sender, GeoUser receiver, String text, Integer inlineMessageId)
+            implements Serializable{
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
@@ -24,7 +26,6 @@ public class GeoUser {
         }
     }
 
-    // todo change map to set and store requests only (maybe even in storage)
     private final HashMap<GeoUser, FriendRequest> incomingFriendRequests = new HashMap<>();
     private final HashMap<GeoUser, FriendRequest> outgoingFriendRequests = new HashMap<>();
     private final Set<GeoUser> friends = new HashSet<>();
