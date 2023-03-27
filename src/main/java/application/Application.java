@@ -13,7 +13,7 @@ import java.io.IOException;
  * Entry point for bot application
  * */
 public class Application {
-    public static void main(String[] args) throws TelegramApiException {
+    public static void main(String[] args) {
         Logger logger = LoggerFactory.getLogger(Application.class);
         try {
             GeoPalBot bot = new GeoPalBot();

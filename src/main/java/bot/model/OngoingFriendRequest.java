@@ -1,6 +1,4 @@
-package bot;
-
-import bot.storage.GeoUser;
+package bot.model;
 
 import java.util.Objects;
 

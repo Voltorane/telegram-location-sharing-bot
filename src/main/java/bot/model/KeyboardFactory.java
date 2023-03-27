@@ -1,5 +1,6 @@
-package bot;
+package bot.model;
 
+import bot.model.CallbackQueryDataFactory;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
@@ -18,9 +19,12 @@ import java.util.Map;
  * Class that is responsible for creating all keyboards i.e. Inline or not
  * */
 public class KeyboardFactory {
-    // abort button that is used for all reply keyboard markups
+    // abort button that is used for all reply keyboard markups (not inline)
     private static final KeyboardButton abortButton = new KeyboardButton(Constants.ABORT_BUTTON);
+
     /**
+     * Returns a ReplyKeyboard with "Add friend" button with request user flag and an abort button
+     *
      * @return ReplyKeyboard with "Add friend" button with request user flag and an abort button
      * */
     public static ReplyKeyboardMarkup addFriendKeyboard() {
@@ -28,6 +32,7 @@ public class KeyboardFactory {
                 .builder()
                 .text(Constants.FriendRequestConstants.ADD_FRIEND)
                 .requestUser(KeyboardButtonRequestUser.builder()
+                        // dummy id as we only need one
                         .requestId("1")
                         .build())
                 .build();
@@ -44,6 +49,8 @@ public class KeyboardFactory {
     }
 
     /**
+     * Returns a ReplyKeyboard with "Share location" button with request location flag and an abort button
+     *
      * @return ReplyKeyboard with "Share location" button with request location flag and an abort button
      * */
     public static ReplyKeyboardMarkup shareLocationKeyboard() {
@@ -63,6 +70,8 @@ public class KeyboardFactory {
     }
 
     /**
+     * Returns ReplyKeyboardRemove with removeKeyboard flag enabled to remove the keyboard from the user
+     *
      * @return ReplyKeyboardRemove with removeKeyboard flag enabled to remove the keyboard from the user
      * */
     public static ReplyKeyboardRemove removeKeyboard() {
@@ -73,6 +82,8 @@ public class KeyboardFactory {
     }
 
     /**
+     * Returns an empty ReplyKeyboardMarkup to clear the keyboard
+     *
      * @return empty ReplyKeyboardMarkup to clear the keyboard
      * */
     public static ReplyKeyboardMarkup clearKeyboard() {
@@ -83,6 +94,8 @@ public class KeyboardFactory {
     }
 
     /**
+     * Returns an empty keyboard that can replace the existing inline keyboard -> clearing it on the message
+     *
      * @return empty keyboard that can replace the existing inline keyboard -> clearing it on the message
      * */
     public static InlineKeyboardMarkup removeInlineKeyboard() {
@@ -135,6 +148,13 @@ public class KeyboardFactory {
                 .build();
     }
 
+    /**
+     * Returns an InlineKeyboardMarkup with "Send request without comments" and "Abort" buttons
+     *
+     * @param sendCallback callback with send instruction
+     * @param abortCallback callback with abort instruction
+     * @return InlineKeyboardMarkup with "Send request without comments" and "Abort" buttons
+     * */
     public static InlineKeyboardMarkup friendRequestCommentInlineKeyboard(String sendCallback, String abortCallback) {
         return InlineKeyboardMarkup.builder()
                 .keyboardRow(
@@ -155,7 +175,13 @@ public class KeyboardFactory {
                 .build();
     }
 
-    // todo change abort callback to unified from constants
+    /**
+     * Returns an InlineKeyboardMarkup with "Send" and "Abort" buttons
+     *
+     * @param confirmCallback callback with send instruction (response:to:from)
+     * @param abortCallback callback with abort instruction (response:to:from)
+     * @return InlineKeyboardMarkup with "Send request without comments" and "Abort" buttons
+     * */
     public static InlineKeyboardMarkup friendRequestConfirmInlineKeyboard(String confirmCallback, String abortCallback) {
         return InlineKeyboardMarkup.builder()
                 .keyboardRow(
@@ -177,6 +203,9 @@ public class KeyboardFactory {
     }
 
     /**
+     * Returns InlineKeyboardMarkup with a list of friends in form [friendUserName:friendCallback], list instruction buttons
+     * and abort button
+     *
      * @param buttons button map with button text as key and callback data as value
      * @param nextBtnCallback if null, no "next" button will be created
      * @param previousBtnCallback if null, no "previous" button will be created  */
@@ -222,7 +251,7 @@ public class KeyboardFactory {
         InlineKeyboardButton abortButton = InlineKeyboardButton
                 .builder()
                 .text(Constants.RemoveFriendConstants.ABORT)
-                .callbackData(Constants.RemoveFriendConstants.ABORT_CALLBACK_QUERY)
+                .callbackData(CallbackQueryDataFactory.RemoveFriend.getAbortCallback())
                 .build();
         // last button is the abort button
         rows.add(List.of(abortButton));
@@ -230,19 +259,25 @@ public class KeyboardFactory {
         return keyboardMarkup;
     }
 
+    /**
+     * Returns {@link InlineKeyboardMarkup} with (accept/abort) buttons to confirm friend deletion
+     *
+     * @param confirmCallback should contain confirm message with user id to remove from friends
+     * @return {@link InlineKeyboardMarkup} with (except/abort) buttons to confirm friend deletion
+     * */
     public static InlineKeyboardMarkup removeFriendConfirmInlineKeyboard(String confirmCallback) {
         return InlineKeyboardMarkup.builder()
                 .keyboardRow(
                         List.of(
                                 InlineKeyboardButton
                                         .builder()
-                                        .text(Constants.FriendRequestConstants.SEND)
+                                        .text(Constants.RemoveFriendConstants.SEND)
                                         .callbackData(confirmCallback)
                                         .build(),
                                 InlineKeyboardButton
                                         .builder()
                                         .text(Constants.RemoveFriendConstants.ABORT)
-                                        .callbackData(Constants.RemoveFriendConstants.ABORT_CALLBACK_QUERY)
+                                        .callbackData(CallbackQueryDataFactory.RemoveFriend.getAbortCallback())
                                         .build()
                         )
                 )
