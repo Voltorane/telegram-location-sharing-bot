@@ -16,11 +16,17 @@ To get started with GeoPal, simply start a chat with the bot by searching for [@
 - /help - Get help with using GeoPal.
 
 ## Overview
-![Demo](resources/demo.gif) \
+In the following I would like to showcase some core functionality of the bot:
 
-![Scroll over the friend list](resources/friend_list.gif) \
+![Demo](resources/demo.gif)
 
-![Abort every action](resources/abort.gif) \
+Lists are dynamically scrolled:
+
+![Scroll over the friend list](resources/friend_list.gif)
+
+And aborts are also possible:
+
+![Abort every action](resources/abort.gif)
 
 ## How to run
 
